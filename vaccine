@@ -16,7 +16,7 @@ from geopy.geocoders import Nominatim
 _url = 'https://am-i-eligible.covid19vaccine.health.ny.gov/api/list-providers'
 _data = '/home/alex/dev/vaccine/data'
 _position_db = '/home/alex/dev/vaccine/data/geolocation.db'
-_home = (40.719577, -74.045736)
+_home = ... 
 
 def lat_lon_distance(one, two):
      R = 6373.0  # radius of the Earth in km, so results in km
