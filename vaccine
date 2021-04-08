@@ -1,0 +1,80 @@
+#!/usr/bin/python3
+
+import sys
+import requests
+import datetime
+import pandas as pd
+import json
+import math
+import shelve
+import gmail
+
+import geopy
+from geopy.geocoders import Nominatim
+
+
+_url = 'https://am-i-eligible.covid19vaccine.health.ny.gov/api/list-providers'
+_data = '/home/alex/dev/vaccine/data'
+_position_db = '/home/alex/dev/vaccine/data/geolocation.db'
+_home = (40.719577, -74.045736)
+
+def lat_lon_distance(one, two):
+     R = 6373.0  # radius of the Earth in km, so results in km
+
+     lat1 = math.radians(one[0])
+     lon1 = math.radians(one[1])
+     lat2 = math.radians(two[0])
+     lon2 = math.radians(two[1])
+
+     dlon = lon2 - lon1
+     dlat = lat2 - lat1
+
+     a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2  # Haversine formula
+
+     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+     return R * c 
+
+
+def save_data(data):
+   now = datetime.datetime.now() 
+   out = _data + '/' + now.strftime('%Y%m%d.%H%M%S') + '.available_vaccine.json'
+   fh = open(out, 'w')
+   json.dump(data, fh) 
+   fh.close()
+
+
+result = requests.get(_url)
+result = result.json()
+save_data(result)
+
+
+if datetime.datetime.now() - pd.to_datetime(result['lastUpdated']) > datetime.timedelta(hours=1):
+    print(str(datetime.datetime.now()), 'has not updated in the last hour')
+    sys.exit(0)
+
+result = [p for p in result['providerList'] if p['availableAppointments'] == 'Y']
+
+if len(result) <= 0:
+    print(str(datetime.datetime.now()), 'no one has appointments')
+    sys.exit(0)
+
+position_db = shelve.open(_position_db)
+
+valid_sites = []
+for res in result:
+    if res['address'] not in position_db:
+       geolocator = Nominatim(user_agent="alex-vaccine")
+       location = geolocator.geocode(res['address'])
+       position_db[res['address']] = lat_lon_distance(_home, location.point)
+
+    distance = position_db[res['address']]
+    if distance < 50:
+       valid_sites.append(res)
+
+if valid_sites:
+    print(str(datetime.datetime.now()), 'valid sites - sending email')
+    gmail.send_mail(str(valid_sites))
+else:
+    print(str(datetime.datetime.now()), 'no valid sites')
+
+sys.exit(0)

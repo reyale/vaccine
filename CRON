@@ -1,0 +1,1 @@
+*/10 * * * * /home/alex/dev/vaccine/vaccine >> /home/alex/dev/vaccine/script.log
