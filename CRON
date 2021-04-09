@@ -1,1 +1,1 @@
-*/10 * * * * /home/alex/dev/vaccine/vaccine -c /home/alex/dev/vaccine/config/example.json >> /home/alex/dev/vaccine/script.log
+*/10 * * * * /home/alex/dev/vaccine/vaccine -c /home/alex/dev/vaccine/config/example.json >> /home/alex/dev/vaccine/script.log 2>&1
