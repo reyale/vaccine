@@ -1,0 +1,9 @@
+{
+  "data_dir": "/home/alex/data/vaccine",
+  "geodb": "/home/alex/var/vaccine/geodb.db",
+  "home": [41.0, -70.0],
+  "distance_km_threshold": 50,
+  "to_email": "example@gmail.com",
+  "from_email": "example@gmail.com",
+  "email_password": "fake"
+}

@@ -1,80 +1,80 @@
 #!/usr/bin/python3
 
+import os
+import argparse
 import sys
-import requests
 import datetime
-import pandas as pd
 import json
-import math
 import shelve
-import gmail
 
-import geopy
 from geopy.geocoders import Nominatim
 
-
-_url = 'https://am-i-eligible.covid19vaccine.health.ny.gov/api/list-providers'
-_data = '/home/alex/dev/vaccine/data'
-_position_db = '/home/alex/dev/vaccine/data/geolocation.db'
-_home = ... 
-
-def lat_lon_distance(one, two):
-     R = 6373.0  # radius of the Earth in km, so results in km
-
-     lat1 = math.radians(one[0])
-     lon1 = math.radians(one[1])
-     lat2 = math.radians(two[0])
-     lon2 = math.radians(two[1])
-
-     dlon = lon2 - lon1
-     dlat = lat2 - lat1
-
-     a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2  # Haversine formula
-
-     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-     return R * c 
+import lib.gmail
+import lib.GEO
+import lib.NY
+import lib.NJ
 
 
-def save_data(data):
-   now = datetime.datetime.now() 
-   out = _data + '/' + now.strftime('%Y%m%d.%H%M%S') + '.available_vaccine.json'
-   fh = open(out, 'w')
-   json.dump(data, fh) 
-   fh.close()
+class VaccineFinder:
+    def __init__(self, config_fname):
+        self.config = json.load(open(config_fname, 'r'))
+
+        os.makedirs(self.config['data_dir'], exist_ok=True)
+        self.data_dir = self.config['data_dir']
+        os.makedirs(os.path.dirname(self.config['geodb']), exist_ok=True)
+        self.position_db = shelve.open(self.config['geodb'])
+
+    def save_data(self, name, data):
+        now = datetime.datetime.now()
+        out = self.data_dir + '/' + now.strftime('%Y%m%d.%H%M%S') + '.%s.json' % name
+        fh = open(out, 'w')
+        json.dump(data, fh)
+        fh.close()
+
+    def get_data(self, module):
+        data = module.get_json()
+        self.save_data(module.__name__, data)
+        data = module.available_only(data)
+
+        valid_sites = []
+        for res in data:
+            address = module.extract_addres(res)
+
+            if address not in self.position_db:
+                geolocator = Nominatim(user_agent="vaccine-finder")
+                location = geolocator.geocode(address)
+                if not location:
+                    continue
+
+                self.position_db[address] = lib.GEO.lat_lon_distance_km(self.config['home'], location.point)
+
+            distance = self.position_db[address]
+            if distance < self.config['distance_km_threshold']:
+                valid_sites.append(res)
+
+        return valid_sites
+
+    def run(self):
+        msg = ''
+        for module in [lib.NY, lib.NJ]:
+            res = self.get_data(module)
+            if res:
+                msg += '<p></p>'
+                msg += lib.gmail.render_html_table(module.__name__, res)
+
+        if msg:
+            lib.gmail.send_mail(self.config['from_email'], self.config['email_password'], self.config['to_email'], 'vaccine sites', msg) 
 
 
-result = requests.get(_url)
-result = result.json()
-save_data(result)
+def run(args):
+    vf = VaccineFinder(args.config)
+    vf.run()
 
 
-if datetime.datetime.now() - pd.to_datetime(result['lastUpdated']) > datetime.timedelta(hours=1):
-    print(str(datetime.datetime.now()), 'has not updated in the last hour')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='check websites for vaccines')
+    parser.add_argument('-c', '--config', required=True, help='configuration file')
+    args = parser.parse_args()
+    run(args)
+
     sys.exit(0)
-
-result = [p for p in result['providerList'] if p['availableAppointments'] == 'Y']
-
-if len(result) <= 0:
-    print(str(datetime.datetime.now()), 'no one has appointments')
-    sys.exit(0)
-
-position_db = shelve.open(_position_db)
-
-valid_sites = []
-for res in result:
-    if res['address'] not in position_db:
-       geolocator = Nominatim(user_agent="alex-vaccine")
-       location = geolocator.geocode(res['address'])
-       position_db[res['address']] = lat_lon_distance(_home, location.point)
-
-    distance = position_db[res['address']]
-    if distance < 50:
-       valid_sites.append(res)
-
-if valid_sites:
-    print(str(datetime.datetime.now()), 'valid sites - sending email')
-    gmail.send_mail(str(valid_sites))
-else:
-    print(str(datetime.datetime.now()), 'no valid sites')
-
-sys.exit(0)
